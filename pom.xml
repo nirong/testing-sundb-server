@@ -37,7 +37,13 @@
             <version>5.0.12</version>
         </dependency>
 -->
-
+        <dependency>
+            <groupId>sundb</groupId>
+            <artifactId>sunje6</artifactId>
+            <version>1.0</version>
+            <scope>system</scope>
+            <systemPath>/home/phynix/sundb_home/lib/sundb6.jar</systemPath>
+        </dependency>
         <dependency>
             <groupId>io.airlift</groupId>
             <artifactId>log</artifactId>

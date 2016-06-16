@@ -23,10 +23,12 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
+import javax.sql.*;
+//import java.sql.Connection;
+//import java.sql.DriverManager;
+//import java.sql.SQLException;
+//import java.sql.Statement;
 import java.util.Map;
 import java.util.Set;
 
@@ -40,10 +42,11 @@ public final class TestingSunDBServer
 		implements Closeable
 {
     private static final Logger log = Logger.get(TestingSunDBServer.class);
+    protected static final String SUNDB_DRIVER_CLASS = "sunje.sundb.jdbc.SundbDriver";
 
     private final String user;
     private final String password;
-    private final Set<String> databases;
+    private final String database;
     private final int port;
     private final Path sundbDir;
     private final EmbeddedSunDB server;
@@ -51,16 +54,17 @@ public final class TestingSunDBServer
     public TestingSunDBServer(String user, String password, String... databases)
             throws Exception
     {
-        this(user, password, ImmutableList.copyOf(databases));
+        this(user, password, "test", 22222);
     }
-
-    public TestingSunDBServer(String user, String password, Iterable<String> databases)
+    public TestingSunDBServer(String user, String password, String database, int port)
             throws Exception
     {
         this.user = checkNotNull(user, "user is null");
         this.password = checkNotNull(password, "password is null");
-        this.databases = ImmutableSet.copyOf(checkNotNull(databases, "databases is null"));
-        port = randomPort();
+        this.port = port;
+        this.database = database;
+//        port = randomPort();
+//        port = 22222;
 
         sundbDir = createTempDirectory("testing-sundb-server");
         Path dataDir = sundbDir.resolve("data");
@@ -84,29 +88,20 @@ public final class TestingSunDBServer
             throw new RuntimeException("SUNDB did not start");
         }
 
-        try (Connection connection = waitForConnection(getJdbcUrl())) {
-            for (String database : databases) {
-                try (Statement statement = connection.createStatement()) {
-                    execute(statement, format("CREATE DATABASE %s", database));
-                    execute(statement, format("GRANT ALL ON %s.* TO '%s'@'%%' IDENTIFIED BY '%s'", database, user, password));
-                }
-            }
-        }
+        try (Connection connection = waitForConnection(getJdbcUrl(), user, password)) {
+//            for (String database : databases) {
+//                try (Statement statement = connection.createStatement()) {
+//                    execute(statement, format("CREATE DATABASE %s", database));
+//                    execute(statement, format("GRANT ALL ON %s.* TO '%s'@'%%' IDENTIFIED BY '%s'", database, user, password));
+//                }
+//            }
+    }
         catch (SQLException e) {
             close();
             throw e;
         }
 
-        log.info("MySQL server ready: %s", getJdbcUrl());
-    }
-
-    private static int randomPort()
-            throws IOException
-    {
-        try (ServerSocket socket = new ServerSocket()) {
-            socket.bind(new InetSocketAddress(0));
-            return socket.getLocalPort();
-        }
+        log.info("SunDB server ready: %s", getJdbcUrl());
     }
 
     private static void execute(Statement statement, String sql)
@@ -115,20 +110,32 @@ public final class TestingSunDBServer
         log.debug("Executing: %s", sql);
         statement.execute(sql);
     }
+    public static Connection createConnectionByDriverManager(String jdbcUrl, String user, String password) throws SQLException
+    {
+        try
+        {
+            Class.forName(SUNDB_DRIVER_CLASS);
+        }
+        catch (ClassNotFoundException sException)
+        {
+        	sException.printStackTrace();
+        }
 
-    private static Connection waitForConnection(String jdbcUrl)
+        return DriverManager.getConnection(jdbcUrl, user, password);
+    }
+    private static Connection waitForConnection(String jdbcUrl, String user, String password)
             throws InterruptedException
     {
-        while (true) {
-            try {
-                return DriverManager.getConnection(jdbcUrl);
-            }
-            catch (SQLException e) {
-                // ignored
-            }
-            log.info("Waiting for MySQL to start at " + jdbcUrl);
-            MILLISECONDS.sleep(10);
-        }
+	        while (true) {
+	            try {
+	                return createConnectionByDriverManager(jdbcUrl, user, password);
+	            }
+	            catch (SQLException e) {
+	                // ignored
+	            }
+	            log.info("Waiting for SunDB to start at " + jdbcUrl);
+	            MILLISECONDS.sleep(10);
+	        }
     }
 
     @Override
@@ -167,10 +174,6 @@ public final class TestingSunDBServer
         return password;
     }
 
-    public Set<String> getDatabases()
-    {
-        return databases;
-    }
 
     public int getPort()
     {
@@ -179,6 +182,6 @@ public final class TestingSunDBServer
 
     public String getJdbcUrl()
     {
-        return format("jdbc:sundb://localhost:%d?/%s", port, user, password);
+        return format("jdbc:sundb://localhost:%d/%s", port, database);
     }
 }
